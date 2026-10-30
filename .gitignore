@@ -1,0 +1,29 @@
+# Dataset (demasiado pesado para GitHub; ver README para descargarlo)
+data/
+
+# Modelos entrenados y checkpoints
+models/
+*.keras
+*.h5
+checkpoints/
+
+# Logs de entrenamiento
+logs/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Sistema / editor
+.DS_Store
+.vscode/
+.idea/
+
+# Configuración local de Claude Code
+.claude/
