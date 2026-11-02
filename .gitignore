@@ -1,11 +1,13 @@
 # Dataset (demasiado pesado para GitHub; ver README para descargarlo)
 data/
 
-# Modelos entrenados y checkpoints
-models/
+# Modelos entrenados y checkpoints (solo se sube el modelo final que usa src/app.py)
+models/*
 *.keras
 *.h5
 checkpoints/
+!models/lol_champion_classifier.keras
+!models/metadata.json
 
 # Logs de entrenamiento
 logs/
@@ -19,6 +21,15 @@ env/
 
 # Jupyter
 .ipynb_checkpoints/
+
+# LaTeX (archivos intermedios al compilar el reporte)
+*.aux
+*.log
+*.out
+*.toc
+*.synctex.gz
+*.fdb_latexmk
+*.fls
 
 # Sistema / editor
 .DS_Store
