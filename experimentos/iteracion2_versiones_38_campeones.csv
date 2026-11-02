@@ -1,0 +1,8 @@
+versión,cambio,forma,épocas,train acc,val acc,val top5,val f1,test acc,test top5,test f1
+v1,CNN desde cero,stretch,24,1.0,0.116,0.263,0.106,0.116,0.232,0.117
+v2,v1 + aumento de datos + Dropout,stretch,33,0.096,0.063,0.168,0.053,0.084,0.232,0.059
+v3,MobileNetV2 congelada + aumento,stretch,23,0.503,0.137,0.432,0.121,0.116,0.379,0.098
+v3-crop,v3 con shape_mode='crop',crop,46,0.691,0.126,0.389,0.106,0.168,0.432,0.172
+v3-pad,v3 con shape_mode='pad',pad,12,0.064,0.074,0.284,0.068,0.063,0.2,0.054
+v3c,EfficientNetB0 congelada (stretch),stretch,30,0.662,0.137,0.389,0.122,0.168,0.4,0.134
+v4,v3c (EfficientNetB0) + fine-tuning desde block6a,stretch,27,0.729,0.168,0.4,0.152,0.168,0.411,0.134

@@ -1,0 +1,7 @@
+versión,entrenada con,evaluada en,val acc,val top5,val f1,test acc,test top5,test f1
+v5,color + _bw,color,0.242,0.6,0.212,0.242,0.516,0.242
+v5,color + _bw,grises,0.284,0.6,0.255,0.274,0.547,0.259
+v6,color + _bw,color,,,,0.305,0.6,0.3
+v6,color + _bw,grises,,,,0.337,0.611,0.305
+v5,solo _bw,grises,0.316,0.589,0.284,0.284,0.537,0.263
+v6,solo _bw,grises,,,,0.347,0.558,0.341
