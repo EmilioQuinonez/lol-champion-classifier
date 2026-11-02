@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clasificador de Campeones</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+  <header>
+    <h1>Clasificador de Campeones</h1>
+    <div class="sub">Sube una imagen y el modelo te dice qué campeón de League of Legends es</div>
+  </header>
+
+  <label id="drop" for="file">
+    <p><strong>Arrastra imágenes aquí</strong> o haz clic para elegirlas</p>
+    <p class="hint">JPG, PNG, WEBP o BMP. También puedes pegarlas con Ctrl+V</p>
+  </label>
+  <input id="file" type="file" accept="image/*" multiple>
+
+  <div class="toolbar" hidden><button class="clear" type="button">Limpiar resultados</button></div>
+  <section id="results"></section>
+
+  <footer id="info"></footer>
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>
