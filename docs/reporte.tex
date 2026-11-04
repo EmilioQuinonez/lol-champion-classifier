@@ -37,7 +37,7 @@
 \begin{@twocolumnfalse}
 \maketitle
 \vspace{-1.5em}
-\noindent\textbf{ABSTRACT} Este reporte muestra cómo construimos una red neuronal convolucional que reconoce a qué campeón de League of Legends pertenece una \textit{splash art}, usando el dataset \textit{``League of Legends Champions Visual Data''}. El reto principal es que cada campeón tiene muy pocas imágenes y que entre sus skins cambian los colores, la ropa y el fondo; lo único que se mantiene es el propio campeón. Durante la limpieza encontramos y quitamos 174 splash arts grupales (la misma imagen etiquetada como campeones distintos) y 18 duplicados, y después de una primera iteración fallida con 107 campeones nos quedamos con los 38 que tienen al menos 15 imágenes limpias. Seguimos un proceso incremental de nueve versiones: una CNN desde cero (v1) se quedó en 0.105 de accuracy en validación, el aumento de datos con Dropout no la mejoró, y el transfer learning con EfficientNetB0, congelada y luego con fine-tuning, llegó a 0.200. El cambio que más ayudó no fue de arquitectura sino de cómo se le muestra la imagen al modelo: dividir la splash en tres recortes de 384~px subió validación a 0.242 y el top-5 a 0.600. Después descubrimos que el color de las skins confunde al modelo: entrenar y predecir en escala de grises dio la mejor versión en validación (accuracy 0.316, F1 macro 0.284). El modelo final, esa misma versión reentrenada con train + validación, llegó a 0.347 de accuracy, 0.558 de top-5 y 0.341 de F1 macro en test, contra 0.026 que daría el azar con 38 clases.
+\noindent\textbf{ABSTRACT} Este reporte muestra cómo construimos una red neuronal convolucional que reconoce a qué campeón de League of Legends pertenece una \textit{splash art}, usando el dataset \textit{``League of Legends Champions Visual Data''}. El reto principal es que cada campeón tiene muy pocas imágenes y que entre sus skins cambian los colores, la ropa y el fondo; lo único que se mantiene es el propio campeón. Durante la limpieza encontramos y quitamos 174 splash arts grupales (la misma imagen etiquetada como campeones distintos) y 18 duplicados, y después de una primera iteración fallida con 107 campeones nos quedamos con los 38 que tienen al menos 15 imágenes limpias. Seguimos un proceso incremental de ocho versiones: una CNN desde cero (v1) se quedó en 0.105 de accuracy en validación, el aumento de datos con Dropout no la mejoró, y el transfer learning con EfficientNetB0, congelada y luego con fine-tuning, llegó a 0.200. El cambio que más ayudó no fue de arquitectura sino de cómo se le muestra la imagen al modelo: dividir la splash en tres recortes de 384~px subió validación a 0.242 y el top-5 a 0.589. Después descubrimos que el color de las skins confunde al modelo: entrenar y predecir en escala de grises dio la mejor versión en validación (accuracy 0.316), que es nuestro modelo final y llegó a 0.263 de accuracy, 0.526 de top-5 y 0.230 de F1 macro en test, contra 0.026 que daría el azar con 38 clases. Para la interfaz web reentrenamos esa misma configuración con todas las imágenes; ese modelo ya no se puede medir, así que las métricas que reportamos son las del modelo final.
 \vspace{1.5em}
 \end{@twocolumnfalse}
 ]
@@ -207,9 +207,9 @@ Reportamos tres métricas para cada versión:
   \item \textbf{F1 macro}: el promedio del F1 de cada campeón, todos con el mismo peso. Un modelo no puede verse bien acertando solo a unos cuantos campeones.
 \end{itemize}
 
-\textbf{Todas las decisiones se tomaron con validación}, usando el F1 macro como criterio. Test se reporta para cada versión pero nunca se usó para elegir nada.
+\textbf{Todas las decisiones se tomaron con validación}, usando la accuracy como criterio. Test se reporta para cada versión pero nunca se usó para elegir nada.
 
-En la primera iteración usábamos \texttt{EarlyStopping} sobre \texttt{val\_loss}, y eso cortaba el entrenamiento demasiado pronto: la pérdida de validación sube en cuanto el modelo se vuelve demasiado confiado en sus errores, aunque el número de aciertos siga mejorando. En la v1 de esa iteración el modelo memorizó el 100\% de train en 3 épocas y se restauraron los pesos de la época 0. Por eso cambiamos a vigilar el F1 macro.
+En la primera iteración usábamos \texttt{EarlyStopping} sobre \texttt{val\_loss}, y eso cortaba el entrenamiento demasiado pronto: la pérdida de validación sube en cuanto el modelo se vuelve demasiado confiado en sus errores, aunque el número de aciertos siga mejorando. En la v1 de esa iteración el modelo memorizó el 100\% de train en 3 épocas y se restauraron los pesos de la época 0. Por eso cambiamos a vigilar la accuracy de validación, que cuenta directamente los aciertos.
 
 \subsection{Entrenamiento}
 
@@ -222,10 +222,8 @@ Todas las versiones se entrenan con la misma función, para que la comparación 
     J = -\frac{1}{m}\sum_{i=1}^{m}\log \hat{p}_{i,y_i}
   \end{equation}
   donde $\hat{p}_{i,y_i}$ es la probabilidad que el modelo le da al campeón correcto de la imagen $i$.
-  \item \textbf{Optimizador}: Adam, con batches de 32.
-  \item \textbf{Callback propio \texttt{ValF1}}: al final de cada época predice validación y calcula el F1 macro, para que los demás callbacks lo puedan usar.
-  \item \textbf{\texttt{EarlyStopping}} sobre el F1 macro de validación: para cuando deja de mejorar y restaura los pesos de la mejor época.
-  \item \textbf{\texttt{ReduceLROnPlateau}} sobre el mismo F1: si se estanca, divide el learning rate entre 2, para dar pasos más pequeños cuando el optimizador ya no avanza.
+  \item \textbf{Optimizador}: Adam con learning rate de $10^{-3}$ (salvo el fine-tuning de la v4) y batches de 32.
+  \item \textbf{\texttt{EarlyStopping}} sobre la accuracy de validación: para cuando deja de mejorar y restaura los pesos de la mejor época.
 \end{itemize}
 
 Cada versión se guarda en formato \texttt{.keras} (arquitectura y pesos) tal como se evaluó.
@@ -239,7 +237,7 @@ La v1 llegó al \textbf{100\% de accuracy en train} pero solo a 0.105 en validac
 \begin{figure*}[t]
   \centering
   \includegraphics[width=\textwidth]{curvas_v1.png}
-  \caption{Curvas de entrenamiento de la v1. Train llega al 100\% mientras la pérdida de validación se dispara: el modelo memoriza. La línea punteada marca la mejor época según el F1 macro de validación.}
+  \caption{Curvas de entrenamiento de la v1. Train llega al 100\% mientras la pérdida de validación se dispara: el modelo memoriza. La línea punteada marca la mejor época según la accuracy de validación.}
   \label{fig:v1}
 \end{figure*}
 
@@ -259,12 +257,12 @@ Para atacar el sobreajuste agregamos dos técnicas de regularización:
   \label{fig:aumento}
 \end{figure*}
 
-El resultado fue peor: \textbf{0.053 en validación y 0.095 en train} (Figura~\ref{fig:v2}). Ya no memoriza, pero ahora tampoco aprende: con tan pocas imágenes, la red desde cero no tiene de dónde sacar características generales (bordes, texturas, formas) y la regularización solo le quitó la capacidad de memorizar. Esto nos dejó claro que el problema no se resolvía regularizando una red desde cero, sino dándole al modelo características que ya sepan ``ver''.
+El resultado fue peor: \textbf{0.053 en validación y 0.037 en train} (Figura~\ref{fig:v2}). Ya no memoriza, pero ahora tampoco aprende: con tan pocas imágenes, la red desde cero no tiene de dónde sacar características generales (bordes, texturas, formas) y la regularización solo le quitó la capacidad de memorizar. Esto nos dejó claro que el problema no se resolvía regularizando una red desde cero, sino dándole al modelo características que ya sepan ``ver''.
 
 \begin{figure*}[t]
   \centering
   \includegraphics[width=\textwidth]{curvas_v2.png}
-  \caption{Curvas de entrenamiento de la v2. Con aumento de datos y Dropout, la accuracy de train no pasa de 0.14: el modelo deja de memorizar, pero tampoco aprende.}
+  \caption{Curvas de entrenamiento de la v2. Con aumento de datos y Dropout, la accuracy de train no pasa de 0.12: el modelo deja de memorizar, pero tampoco aprende.}
   \label{fig:v2}
 \end{figure*}
 
@@ -279,7 +277,7 @@ El \textbf{transfer learning} reutiliza una red ya entrenada con ImageNet (1.4 m
   \item Mantenemos el aumento de datos y un Dropout de 0.3 antes de la salida.
 \end{itemize}
 
-La v3 subió a \textbf{0.179 en validación} (F1 0.165) y a 0.368 en top-5, con un sobreajuste mucho menor que la v1 (0.639 en train).
+La v3 subió a \textbf{0.189 en validación} (F1 0.165) y a 0.347 en top-5, con un sobreajuste mucho menor que la v1 (0.586 en train).
 
 \subsection{v4: Fine-Tuning}
 
@@ -292,7 +290,7 @@ Con el clasificador de la v3 ya entrenado, \textbf{descongelamos el último bloq
   \item Partimos de los pesos de la v3: si el clasificador empezara aleatorio, sus gradientes dañarían la base en las primeras épocas.
 \end{itemize}
 
-La v4 mejoró un poco en validación (\textbf{0.200}, F1 0.173), pero test no se movió (0.126 en ambas). En la segunda iteración ya habíamos visto lo mismo: cambiar de backbone, la forma de pasar a cuadrado o el aumento de datos no movía test de $\sim$0.17. Algo más estaba limitando al modelo.
+La v4 mejoró un poco en validación (\textbf{0.200}, F1 0.168), pero test no se movió (0.137 en ambas). En la segunda iteración ya habíamos visto lo mismo: cambiar de backbone, la forma de pasar a cuadrado o el aumento de datos no movía test de $\sim$0.17. Algo más estaba limitando al modelo.
 
 \subsection{v5: Multi-Recorte a 384 px}
 \label{sec:v5}
@@ -320,15 +318,7 @@ Procesar tres recortes de 384~px por imagen en cada época era muy lento en CPU,
 
 El costo es que no se puede usar aumento de datos aleatorio. En su lugar agregamos una copia \textbf{volteada horizontalmente} de cada imagen de train (1,832 ejemplos). En la segunda iteración habíamos visto que quitar el aumento aleatorio no empeoraba los resultados, así que no perdíamos mucho.
 
-Al final unimos el extractor y el clasificador en un solo modelo que recibe la splash completa. La v5 fue el salto más grande: \textbf{0.242 en validación y en test}, y el top-5 de validación pasó de 0.337 a \textbf{0.600}.
-
-\subsection{v6: Reentrenar con Train + Validación}
-
-Todas las versiones hasta aquí mostraban el mismo patrón: el modelo llega a $\sim$99\% en train y se queda muy por debajo en validación. Cambiar la arquitectura ayudó, pero el sobreajuste seguía ahí, y nuestra hipótesis era que el límite es la \textbf{cantidad de datos}.
-
-En clase vimos que, una vez elegidos el modelo y sus hiperparámetros con validación, se puede reentrenar con todos los datos disponibles, porque validación ya cumplió su función. La v6 es exactamente la v5 (mismo extractor, mismo clasificador, mismo learning rate en cada época y las 29 épocas de su mejor resultado), pero entrenada con train + validación (y el volteo de validación), lo que agrega 95 splash nuevas, $\sim$2.5 por campeón. Como lo único que cambia es la cantidad de datos, si test mejora es por eso.
-
-Test subió de \textbf{0.242 a 0.305} (de 23 a 29 aciertos: 8 imágenes pasaron de error a acierto y 2 al revés), y el F1 de 0.242 a 0.300. Esto es consistente con la hipótesis, aunque la v6 sigue llegando al 99\% en train: con más datos generaliza mejor, pero el límite sigue siendo cuántas skins hay por campeón. La v6 ya no tiene métricas de validación, porque la usó para entrenar.
+Al final unimos el extractor y el clasificador en un solo modelo que recibe la splash completa. La v5 fue el salto más grande: \textbf{0.242 en validación y en test}, y el top-5 de validación pasó de 0.368 a \textbf{0.589}. Aun así, la v5 llega al 99\% en train: cambiar la entrada ayudó, pero el sobreajuste seguía ahí.
 
 \section{¿El Modelo Depende del Color?}
 
@@ -336,55 +326,56 @@ Entre las skins de un campeón lo que más cambia es la paleta de colores, mient
 
 \subsection{Diagnóstico}
 
-Para probarlo evaluamos la v5 y la v6, tal como se entrenaron (color más copias \texttt{\_bw}), con validación y test convertidos a escala de grises. Si el modelo dependiera del color, los resultados deberían bajar.
+Para probarlo evaluamos la v5, tal como se entrenó (color más copias \texttt{\_bw}), con validación y test convertidos a escala de grises. Si el modelo dependiera del color, los resultados deberían bajar.
 
 \begin{table}[h]
   \centering
   \begin{tabular}{lcc}
     \toprule
-    \textbf{Modelo / Split} & \textbf{Color} & \textbf{Grises} \\
+    \textbf{Split} & \textbf{Color} & \textbf{Grises} \\
     \midrule
-    v5 -- Validación & 0.242 (23) & \textbf{0.284 (27)} \\
-    v5 -- Test       & 0.242 (23) & \textbf{0.274 (26)} \\
-    v6 -- Test       & 0.305 (29) & \textbf{0.337 (32)} \\
+    Validación & 0.242 (23) & \textbf{0.295 (28)} \\
+    Test       & 0.242 (23) & \textbf{0.295 (28)} \\
     \bottomrule
   \end{tabular}
-  \caption{Accuracy (y aciertos de 95) de la v5 y la v6 evaluadas a color y en escala de grises.}
+  \caption{Accuracy (y aciertos de 95) de la v5 evaluada a color y en escala de grises.}
   \label{tab:grises}
 \end{table}
 
-Pasó lo contrario (Tabla~\ref{tab:grises}): en los tres casos el modelo \textbf{acierta más en grises que a color}. No depende del color; al contrario, el color de las skins le estorba. Eso nos llevó a entrenar directamente en grises.
+Pasó lo contrario (Tabla~\ref{tab:grises}): en los dos splits el modelo \textbf{acierta 5 imágenes más en grises que a color}. No depende del color; al contrario, el color de las skins le estorba. Eso nos llevó a entrenar directamente en grises.
 
-\subsection{v7: Entrenar y Predecir en Escala de Grises}
+\subsection{v6: Entrenar y Predecir en Escala de Grises (Modelo Final)}
 
-Si el clasificador solo ve imágenes en grises al entrenar, no puede aprender pistas de color y se tiene que apoyar en la forma del campeón. La v7 es la misma v5, cambiando solo los datos: en train usa solo las copias \texttt{\_bw} y su volteo, y validación y test se convierten a grises antes de predecir.
+Si el clasificador solo ve imágenes en grises al entrenar, no puede aprender pistas de color y se tiene que apoyar en la forma del campeón. La v6 es la misma v5, cambiando solo los datos: en train usa solo las copias \texttt{\_bw} y su volteo, y validación y test se convierten a grises antes de predecir.
 
-La v7 fue \textbf{la mejor versión en validación}: accuracy 0.316 (30 aciertos contra 23 de la v5) y F1 macro 0.284 (contra 0.212). En test también mejoró a la v5 (0.284 contra 0.242). Lo único que no mejoró fue el top-5 (0.589 contra 0.600): cuando el modelo en grises falla, el campeón correcto queda un poco menos veces entre las 5 primeras opciones.
+La v6 fue \textbf{la mejor versión en validación}: accuracy 0.316 (30 aciertos contra 23 de la v5) y F1 macro 0.278 (contra 0.207). En test también mejoró a la v5 (0.263 contra 0.242). Lo único que no mejoró fue el top-5 (0.579 contra 0.589): cuando el modelo en grises falla, el campeón correcto queda un poco menos veces entre las 5 primeras opciones.
 
 \begin{figure*}[t]
   \centering
   \includegraphics[width=0.85\textwidth]{ejemplos_test.png}
-  \caption{Predicciones del modelo final sobre imágenes de test, ya convertidas a escala de grises. En verde los aciertos y en rojo los errores, con la probabilidad que el modelo le dio a su predicción.}
+  \caption{Predicciones del modelo final (v6) sobre imágenes de test, ya convertidas a escala de grises. En verde los aciertos y en rojo los errores, con la probabilidad que el modelo le dio a su predicción.}
   \label{fig:ejemplos}
 \end{figure*}
 
-\subsection{v8: Color y Grises con más Peso a los Grises}
+\subsection{v7: Color y Grises con más Peso a los Grises}
 
-Quitar el color por completo también quita las pistas de color que sí se mantienen entre skins, como el tono de piel de algunos campeones. Para buscar un punto intermedio, la v8 entrena con todas las imágenes de train (a color y \texttt{\_bw}, más sus volteos), pero cada imagen a color cuenta la mitad en la pérdida, y se evalúa en grises igual que la v7.
+Quitar el color por completo también quita las pistas de color que sí se mantienen entre skins, como el tono de piel de algunos campeones. Para buscar un punto intermedio, la v7 entrena con todas las imágenes de train (a color y \texttt{\_bw}, más sus volteos), pero cada imagen a color cuenta la mitad en la pérdida, y se evalúa en grises igual que la v6.
 
 Para eso usamos \texttt{sample\_weight}, que le asigna un peso $w_i$ a cada ejemplo dentro de la pérdida:
 \begin{equation}
   J = -\frac{1}{m}\sum_{i=1}^{m} w_i \log \hat{p}_{i,y_i}
 \end{equation}
-Las copias \texttt{\_bw} tienen $w_i = 1$ y las imágenes a color (con sus volteos) $w_i = 0.5$. Así, equivocarse en una imagen a color mueve los pesos la mitad que equivocarse en una en grises: el modelo sigue viendo el color, pero lo que más le conviene aprender son las características que también funcionan en grises. Con $w_i = 1$ para todas, el entrenamiento sería el de la v5, y con $w_i = 0$ para las de color, prácticamente el de la v7, así que la v8 queda entre las dos. En Keras basta con que el dataset regrese \texttt{(x, y, w)} en lugar de \texttt{(x, y)}.
+Las copias \texttt{\_bw} tienen $w_i = 1$ y las imágenes a color (con sus volteos) $w_i = 0.5$. Así, equivocarse en una imagen a color mueve los pesos la mitad que equivocarse en una en grises: el modelo sigue viendo el color, pero lo que más le conviene aprender son las características que también funcionan en grises. Con $w_i = 1$ para todas, el entrenamiento sería el de la v5, y con $w_i = 0$ para las de color, prácticamente el de la v6, así que la v7 queda entre las dos. En Keras basta con que el dataset regrese \texttt{(x, y, w)} en lugar de \texttt{(x, y)}.
 
 Fijamos el peso en 0.5 antes de ver resultados: probar varios pesos y quedarnos con el mejor hubiera sido ajustar a validación con solo 95 imágenes.
 
-La v8 quedó prácticamente empatada con la v7: 29 aciertos contra 30 en validación y F1 de 0.280 contra 0.284. Recuperó algo de top-5 (0.611 contra 0.589), lo que confirma que el color sí aporta como pista secundaria. Pero las diferencias son de 1--2 imágenes, dentro del ruido, y con nuestra regla (elegir por F1 macro en validación) gana la v7, que además es más simple: no necesita las imágenes a color ni un peso que ajustar.
+La v7 quedó prácticamente empatada con la v6: 29 aciertos contra 30 en validación, con un F1 un poco mayor (0.283 contra 0.278) y mejor top-5 (0.600 contra 0.579), lo que indica que el color sí aporta como pista secundaria. Pero las diferencias son de una imagen, dentro del ruido, y con nuestra regla (elegir por accuracy en validación) gana la v6, que además es más simple: no necesita las imágenes a color ni un peso que ajustar. En test la v7 salió mejor (0.295 contra 0.263), pero test no se usa para elegir: hacerlo convertiría a test en una segunda validación y su resultado dejaría de ser una medida honesta.
 
-\subsection{v9: Modelo Final}
+\subsection{v8: Modelo para la Interfaz Web}
 
-Igual que la v6 con la v5, la v9 es exactamente la v7 reentrenada con train + validación en grises (31 épocas, las de su mejor resultado). Con eso test pasó de 27 a 33 aciertos: \textbf{0.347 de accuracy y 0.341 de F1 macro}. Frente a la v6, el mejor modelo a color, la v9 acierta 4 imágenes más y tiene mejor F1, aunque menor top-5 (0.558 contra 0.600).
+En clase vimos que, una vez que el modelo está elegido y medido, se puede reentrenar con todo el dataset, porque validación y test ya cumplieron su función. La v8 es exactamente la configuración de la v6 (mismo extractor, mismo clasificador, mismo learning rate y las 20 épocas de su mejor resultado), entrenada en grises con train + validación + test y sus volteos: 1,296 ejemplos contra 916 de la v6, $\sim$5 splash más por campeón.
+
+La v8 es la que usa la interfaz web, porque con más imágenes debería generalizar mejor. Pero \textbf{no es el modelo final del reporte}: como ya no queda ninguna imagen que no haya visto, no hay forma de medirla, y sus resultados no se pueden comparar con los de las demás versiones. Las métricas que reportamos son las de la v6, que es el modelo que entrenamos solo con train, elegimos con validación y medimos en test.
 
 \section{Visualización y Resultados}
 
@@ -399,17 +390,16 @@ La Tabla~\ref{tab:resultados} resume todas las versiones y la Figura~\ref{fig:co
     \textbf{Versión} & \textbf{Cambio} & \textbf{Train acc} & \textbf{Val acc} & \textbf{Val F1} & \textbf{Test acc} & \textbf{Test top-5} & \textbf{Test F1} \\
     \midrule
     v1 & CNN desde cero ($224\times224$)                      & 1.000 & 0.105 & 0.099 & 0.105 & 0.305 & 0.105 \\
-    v2 & v1 + aumento de datos + Dropout                      & 0.095 & 0.053 & 0.032 & 0.063 & 0.189 & 0.036 \\
-    v3 & EfficientNetB0 congelada + aumento                   & 0.639 & 0.179 & 0.165 & 0.126 & 0.421 & 0.108 \\
-    v4 & v3 + fine-tuning desde \texttt{block6a}              & 0.664 & 0.200 & 0.173 & 0.126 & 0.411 & 0.098 \\
-    v5 & 3 recortes de 384 px, EfficientNetB0 como extractor  & 0.997 & 0.242 & 0.212 & 0.242 & 0.516 & 0.242 \\
-    v6 & v5 reentrenada con train + val                       & 0.995 & --    & --    & 0.305 & \textbf{0.600} & 0.300 \\
-    v7 & v5 entrenada y evaluada en grises                    & 0.995 & \textbf{0.316} & \textbf{0.284} & 0.284 & 0.537 & 0.263 \\
-    v8 & v5 color (peso 0.5) + grises, evaluada en grises     & 0.997 & 0.305 & 0.280 & 0.295 & 0.537 & 0.277 \\
-    \textbf{v9} & \textbf{v7 reentrenada con train + val (final)} & 0.992 & -- & -- & \textbf{0.347} & 0.558 & \textbf{0.341} \\
+    v2 & v1 + aumento de datos + Dropout                      & 0.037 & 0.053 & 0.020 & 0.032 & 0.179 & 0.006 \\
+    v3 & EfficientNetB0 congelada + aumento                   & 0.586 & 0.189 & 0.165 & 0.137 & 0.400 & 0.109 \\
+    v4 & v3 + fine-tuning desde \texttt{block6a}              & 0.604 & 0.200 & 0.168 & 0.137 & 0.389 & 0.096 \\
+    v5 & 3 recortes de 384 px, EfficientNetB0 como extractor  & 0.991 & 0.242 & 0.207 & 0.242 & 0.505 & 0.227 \\
+    \textbf{v6} & \textbf{v5 entrenada y evaluada en grises (final)} & 0.991 & \textbf{0.316} & 0.278 & 0.263 & \textbf{0.526} & 0.230 \\
+    v7 & v5 color (peso 0.5) + grises, evaluada en grises     & 0.991 & 0.305 & \textbf{0.283} & \textbf{0.295} & 0.505 & \textbf{0.279} \\
+    v8 & v6 reentrenada con train + val + test (web)          & 0.987 & --    & --    & --    & --    & -- \\
     \bottomrule
   \end{tabular}}
-  \caption{Resultados de todas las versiones. El azar con 38 clases es 0.026. La v6 y la v9 se entrenaron con validación, así que solo tienen métricas de test.}
+  \caption{Resultados de todas las versiones. El azar con 38 clases es 0.026. La v8 se entrenó con todas las imágenes, así que no tiene métricas de validación ni de test.}
   \label{tab:resultados}
 \end{table*}
 
@@ -425,14 +415,14 @@ Viendo la tabla completa, hay tres cosas que destacan:
 \begin{itemize}
   \item \textbf{El tamaño con el que se ve al campeón importó más que la arquitectura.} Entre v3 y v4 (y en las iteraciones anteriores, cambiando de backbone) validación se movió poco y test nada; dividir la splash en tres recortes a mayor resolución (v5) fue el salto más grande.
   \item \textbf{El color de las skins confunde al modelo.} Evaluar en grises mejora a un modelo entrenado a color, y entrenar solo en grises da la mejor versión en validación.
-  \item \textbf{El límite son los datos.} Todas las versiones con transfer learning a 384~px llegan a $\sim$99\% en train, y agregar las 95 imágenes de validación mejoró test tanto a color (v5 $\rightarrow$ v6) como en grises (v7 $\rightarrow$ v9), en ambos casos con 8 imágenes que pasaron de error a acierto y 2 al revés.
+  \item \textbf{El límite son los datos.} Todas las versiones con transfer learning a 384~px llegan a $\sim$99\% en train y se quedan en $\sim$0.3 en validación. En la primera iteración, pasar de $\sim$9 a $\sim$12 imágenes por campeón (de 107 a 38 campeones) subió validación de 0.116 a 0.263 con el mismo modelo.
 \end{itemize}
 
 \subsection{Análisis del Modelo Final en Test}
 
-El modelo final (v9) acierta 33 de las 95 imágenes de test, y en el 55.8\% de los casos el campeón correcto está en su top 5. El desempeño por campeón es muy desigual: Kai'Sa, Annie, Blitzcrank y Teemo llegan a un F1 de 0.80, mientras que \textbf{13 de los 38 campeones tienen F1 de 0} (entre ellos Kayle, Veigar, Shaco, Riven, Katarina, Fiora y Ezreal). Hay que tomar esto con cuidado, porque cada campeón tiene solo 2 o 3 imágenes en test.
+El modelo final (v6) acierta 25 de las 95 imágenes de test, y en el 52.6\% de los casos el campeón correcto está en su top 5. El desempeño por campeón es muy desigual: Annie y Blitzcrank llegan a un F1 de 0.80, mientras que \textbf{19 de los 38 campeones tienen F1 de 0} (entre ellos Ahri, Veigar, Sivir, Shaco, Riven, Nidalee, Master Yi y Karma). Hay que tomar esto con cuidado, porque cada campeón tiene solo 2 o 3 imágenes en test.
 
-La matriz de confusión (Figura~\ref{fig:confusion}) muestra que los errores no se reparten al azar: el modelo tiene campeones ``comodín'' a los que manda muchas imágenes que no reconoce, como Master Yi (6 errores), Sivir (5), Fiora, Vayne y Jax (4 cada uno). Son campeones humanoides con arma, una silueta que se parece a la de muchos otros.
+La matriz de confusión (Figura~\ref{fig:confusion}) muestra que los errores no se reparten al azar: el modelo tiene campeones ``comodín'' a los que manda muchas imágenes que no reconoce, como Morgana y Master Yi (6 errores cada uno), Vayne (5), Sona y Miss Fortune (3 cada uno). Son campeones humanoides, una silueta que se parece a la de muchos otros. Master Yi es un caso claro: recibe 6 predicciones equivocadas y no acierta ninguna de sus propias imágenes.
 
 \begin{figure}[h]
   \centering
@@ -441,21 +431,21 @@ La matriz de confusión (Figura~\ref{fig:confusion}) muestra que los errores no 
   \label{fig:confusion}
 \end{figure}
 
-La Figura~\ref{fig:ejemplos} muestra predicciones sobre imágenes de test. El modelo acierta con seguridad a campeones de silueta única, como Amumu (91\%) o Kog'Maw (73\%), y falla con humanoides parecidos entre sí: Vayne la confunde con Diana, Yasuo con Sona y Caitlyn con Karma. También se ve un caso de splash con varios personajes (Annie con un personaje grande al lado), donde el modelo responde por otro campeón.
+La Figura~\ref{fig:ejemplos} muestra predicciones sobre imágenes de test. El modelo acierta con más seguridad a campeones de silueta única, como Kog'Maw (75\%), y falla con humanoides parecidos entre sí: Vayne la confunde con Morgana, Caitlyn con Sivir y Kai'Sa con Lux. Algunos errores son con bastante seguridad, como Yasuo confundido con Sona (68\%). También se ve un caso de splash con varios personajes (Annie con un personaje grande al lado), donde el modelo responde por otro campeón.
 
 \section{Interfaz Web}
 
-Para mostrar cómo funciona el modelo armamos una interfaz web sencilla. El modelo final se guarda en formato \texttt{.keras} junto con un archivo \texttt{metadata.json} que tiene la lista de campeones, el tamaño de entrada y si el modelo espera la imagen en escala de grises. Un servidor en Python (\texttt{src/app.py}) carga el modelo una sola vez, recibe las imágenes que sube el usuario, les aplica el mismo preprocesamiento del entrenamiento y regresa el top 5 de campeones con su probabilidad.
+Para mostrar cómo funciona el modelo armamos una interfaz web sencilla, que usa la v8 (la configuración del modelo final reentrenada con todas las imágenes). El modelo se guarda en formato \texttt{.keras} junto con un archivo \texttt{metadata.json} que tiene la lista de campeones, el tamaño de entrada y si el modelo espera la imagen en escala de grises. Un servidor en Python (\texttt{src/app.py}) carga el modelo una sola vez, recibe las imágenes que sube el usuario, les aplica el mismo preprocesamiento del entrenamiento y regresa el top 5 de campeones con su probabilidad.
 
-Como el modelo se entrenó con splash horizontales, las imágenes con una proporción muy distinta (verticales o cuadradas) no se pueden estirar a $651\times384$ sin deformarlas mucho. Si la proporción se aleja más de 15\% de la de una splash, la imagen se coloca completa con bordes negros. Las imágenes que usamos para probar la interfaz no son parte de la evaluación: la evaluación del modelo es la de test.
+Como el modelo se entrenó con splash horizontales, las imágenes con una proporción muy distinta (verticales o cuadradas) no se pueden estirar a $651\times384$ sin deformarlas mucho. Si la proporción se aleja más de 15\% de la de una splash, la imagen se coloca completa con bordes negros. Las imágenes que usamos para probar la interfaz son externas al dataset y no son parte de la evaluación: la evaluación del modelo es la de la v6 en test.
 
 \section{Conclusiones}
 
-Construimos un clasificador que reconoce a 38 campeones de League of Legends a partir de sus splash arts con 0.347 de accuracy, 0.558 de top-5 y 0.341 de F1 macro en test, 13 veces más que el azar. Es un resultado moderado, pero con 12 skins por campeón en train que no comparten colores, ropa ni fondo, el problema es bastante más difícil de lo que parece.
+Construimos un clasificador que reconoce a 38 campeones de League of Legends a partir de sus splash arts con 0.263 de accuracy, 0.526 de top-5 y 0.230 de F1 macro en test, 10 veces más que el azar. Es un resultado moderado, pero con 12 skins por campeón en train que no comparten colores, ropa ni fondo, el problema es bastante más difícil de lo que parece.
 
 Lo más valioso del proceso fueron las decisiones que salieron de entender por qué fallaba el modelo, más que de probar arquitecturas: limpiar las splash grupales que eran imposibles de aprender, reducir los campeones cuando vimos que todas las redes llegaban al mismo techo, mostrarle al campeón a mayor resolución cuando vimos que fallaba con los campeones pequeños, y quitar el color cuando vimos que el color de las skins le estorbaba.
 
-El límite que queda es claro: todas las versiones memorizan train y el modelo mejora cada vez que le damos más imágenes. La mejora con más impacto sería conseguir más splash arts por campeón (por ejemplo, de otras fuentes oficiales del juego), lo que además permitiría volver a incluir a los campeones que quitamos.
+El límite que queda es claro: todas las versiones memorizan train, y el modelo mejoró cuando tuvo más imágenes por campeón. La mejora con más impacto sería conseguir más splash arts por campeón (por ejemplo, de otras fuentes oficiales del juego), lo que además permitiría volver a incluir a los campeones que quitamos.
 
 \begin{thebibliography}{9}
 \small
