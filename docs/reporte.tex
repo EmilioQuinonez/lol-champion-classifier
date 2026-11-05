@@ -37,7 +37,7 @@
 \begin{@twocolumnfalse}
 \maketitle
 \vspace{-1.5em}
-\noindent\textbf{ABSTRACT} Este reporte muestra cómo construimos una red neuronal convolucional que reconoce a qué campeón de League of Legends pertenece una splash art, usando el dataset \textit{``League of Legends Champions Visual Data''}. El reto principal es que cada campeón tiene muy pocas imágenes, y entre sus skins cambian los colores, la ropa y el fondo, lo único que se mantiene es el propio campeón. Durante la limpieza encontramos y quitamos 174 splash arts grupales (la misma imagen etiquetada como campeones distintos) y 18 duplicados, y después de una primera iteración fallida con 107 campeones nos quedamos con los 38 que tienen al menos 15 imágenes limpias. Seguimos un proceso incremental de ocho versiones: una CNN desde cero (v1) se quedó en 0.105 de accuracy en validación, el aumento de datos con Dropout no la mejoró, y el transfer learning con EfficientNetB0, congelada y luego con fine-tuning, llegó a 0.200. El cambio que más ayudó fue dividir la splash en tres recortes de 384~px en lugar de aplastarla, lo que subió validación a 0.242 y el top-5 a 0.589. Después vimos que el color de las skins confunde al modelo, así que entrenamos y predecimos en escala de grises, lo que dio la mejor versión en validación (accuracy 0.316). Ese es nuestro modelo final, y llegó a 0.263 de accuracy, 0.526 de top-5 y 0.230 de F1 macro en test, contra 0.026 que daría el azar con 38 clases. Para la interfaz web reentrenamos esa misma configuración con todas las imágenes, pero ese modelo ya no se puede medir, así que las métricas que reportamos son las del modelo final.
+\noindent\textbf{ABSTRACT} Este reporte muestra cómo construimos una red neuronal convolucional que reconoce a qué campeón de League of Legends pertenece una splash art, usando el dataset \textit{``League of Legends Champions Visual Data''}. El reto principal es que cada campeón tiene muy pocas imágenes, y entre sus skins cambian los colores, la ropa y el fondo, lo único que se mantiene es el propio campeón. Durante la limpieza encontramos y quitamos 174 splash arts grupales (la misma imagen etiquetada como campeones distintos) y 18 duplicados, y después de una primera iteración fallida con 107 campeones nos quedamos con los 38 que tienen al menos 15 imágenes limpias. Seguimos un proceso incremental de nueve versiones: una CNN desde cero (v1) se quedó en 0.105 de accuracy en validación, el aumento de datos con Dropout no la mejoró, y el transfer learning con EfficientNetB0, congelada y luego con fine-tuning, llegó a 0.200. El cambio que más ayudó fue dividir la splash en tres recortes de 384~px en lugar de aplastarla, lo que subió validación a 0.242 y el top-5 a 0.589. Después vimos que el color de las skins confunde al modelo, así que entrenamos y predecimos en escala de grises, lo que subió validación a 0.316. Como todas las versiones memorizaban train, suponíamos que el límite era la falta de datos, y para comprobarlo agregamos a train 380 fan arts y cosplays de los campeones. Con el mismo modelo, validación subió a 0.389 y el F1 macro de 0.278 a 0.374, lo que confirmó la hipótesis. Ese es nuestro modelo final, y llegó a 0.263 de accuracy, 0.516 de top-5 y 0.242 de F1 macro en test, contra 0.026 que daría el azar con 38 clases. Para la interfaz web reentrenamos esa misma configuración con todas las imágenes, pero ese modelo ya no se puede medir, así que las métricas que reportamos son las del modelo final.
 \vspace{1.5em}
 \end{@twocolumnfalse}
 ]
@@ -48,7 +48,7 @@ League of Legends tiene más de 170 campeones, y cada uno tiene varias skins: ve
 
 El objetivo de este trabajo es construir, con TensorFlow y Keras, un clasificador de imágenes que reciba una splash art y diga a qué campeón pertenece, junto con su top 5 de campeones más probables. La idea no es solo llegar a un modelo que funcione, sino mostrar todo el proceso, desde cómo limpiamos los datos y por qué tomamos cada decisión, hasta lo que probamos que no funcionó y lo que nos enseñaron los errores del modelo sobre el problema.
 
-Para eso seguimos un proceso incremental, empezamos con una CNN sencilla como aproximación inicial, y fuimos agregando una mejora a la vez (aumento de datos, transfer learning, fine-tuning, cambios en la entrada y reentrenamiento con todos los datos), midiendo el efecto de cada una en el conjunto de validación.
+Para eso seguimos un proceso incremental, empezamos con una CNN sencilla como aproximación inicial, y fuimos agregando una mejora a la vez (aumento de datos, transfer learning, fine-tuning, cambios en la entrada, fan arts y cosplays para tener más datos y reentrenamiento con todos los datos), midiendo el efecto de cada una en el conjunto de validación.
 
 \section{Descripción del Dataset}
 
@@ -165,6 +165,24 @@ El resultado fue 458 splash en train (916 con sus copias \_bw), 95 en validació
 \end{figure*}
 
 Algo que hay que tener en cuenta en todo el reporte es que val y test tienen solo 95 imágenes cada uno, así que cada imagen vale alrededor de 0.011 de accuracy. Diferencias de una o dos imágenes entre versiones están dentro del ruido.
+
+\subsection{Fan Arts y Cosplays}
+\label{sec:fanarts}
+
+Todas las versiones que fuimos probando (sección~\ref{sec:v5} en adelante) memorizan train y se quedan en alrededor de 0.3 en validación, y en la primera iteración el modelo mejoró en cuanto tuvo más imágenes por campeón. Por eso suponíamos que el límite era la falta de datos, y para comprobar si esa hipótesis era cierta decidimos agregar más imágenes de los mismos campeones.
+
+Primero buscamos un dataset que ya tuviera fan arts de League of Legends, pero no encontramos ninguno. Lo único que había eran otros datasets de splash arts, con las mismas imágenes que ya teníamos, así que los descartamos. Al final juntamos las imágenes a mano en ArtStation, DeviantArt y Pinterest, buscando unas 10 por campeón en las que apareciera un solo campeón y que de preferencia fueran horizontales, como las splash. Hay fan arts de estilos muy distintos (realistas, chibi, anime) y también fotos de cosplay (Figura~\ref{fig:fanarts}).
+
+De las 417 imágenes que juntamos quitamos 37. Con las mismas huellas que usamos para las splash grupales (MD5 y average hash) encontramos que 33 en realidad eran splash oficiales. De esas, 16 eran iguales a imágenes de validación o test, que hubieran inflado los resultados, y 17 a imágenes de train, que no aportaban nada nuevo. Las otras 4 eran imágenes repetidas. Quedaron 380 fan arts, entre 6 y 16 por campeón (10 en promedio).
+
+Las fan arts solo se usan en train, así que validación y test siguen siendo las mismas splash y los resultados se pueden comparar con los de las versiones anteriores. Se procesan igual que las splash (384~px de alto con LANCZOS) y, como el modelo de ese momento entrenaba solo con imágenes en grises, se guardan solo en escala de grises.
+
+\begin{figure*}[t]
+  \centering
+  \includegraphics[width=\textwidth]{ejemplos_fan_arts.png}
+  \caption{Ejemplos de fan arts y cosplays ya procesados en escala de grises.}
+  \label{fig:fanarts}
+\end{figure*}
 
 \section{Transformación de Datos}
 
@@ -345,18 +363,11 @@ Para probarlo evaluamos la v5, tal como se entrenó (color más copias \_bw), co
 
 Los resultados no bajaron, al contrario, en los dos splits el modelo acierta 5 imágenes más en grises que a color (Tabla~\ref{tab:grises}). O sea que el modelo no depende del color, y más bien el color de las skins le estorba, así que decidimos entrenar directamente en grises.
 
-\subsection{v6: Entrenar y Predecir en Escala de Grises (Modelo Final)}
+\subsection{v6: Entrenar y Predecir en Escala de Grises}
 
 Si el clasificador solo ve imágenes en grises al entrenar, no puede aprender pistas de color y se tiene que apoyar en la forma del campeón. La v6 es la misma v5, cambiando solo los datos: en train usa solo las copias \_bw y su volteo, y validación y test se convierten a grises antes de predecir.
 
-La v6 fue la mejor versión en validación, con accuracy de 0.316 (30 aciertos contra 23 de la v5) y F1 macro de 0.278 (contra 0.207). En test también mejoró a la v5 (0.263 contra 0.242). Lo único que no mejoró fue el top-5 de validación (0.579 contra 0.589), o sea que cuando el modelo en grises falla, el campeón correcto queda un poco menos veces entre las 5 primeras opciones.
-
-\begin{figure*}[t]
-  \centering
-  \includegraphics[width=0.85\textwidth]{ejemplos_test.png}
-  \caption{Predicciones del modelo final (v6) sobre imágenes de test, ya convertidas a escala de grises. En verde los aciertos y en rojo los errores, con la probabilidad que el modelo le dio a su predicción.}
-  \label{fig:ejemplos}
-\end{figure*}
+La v6 fue la mejor versión en validación hasta ese punto, con accuracy de 0.316 (30 aciertos contra 23 de la v5) y F1 macro de 0.278 (contra 0.207). En test también mejoró a la v5 (0.263 contra 0.242). Lo único que no mejoró fue el top-5 de validación (0.579 contra 0.589), o sea que cuando el modelo en grises falla, el campeón correcto queda un poco menos veces entre las 5 primeras opciones.
 
 \subsection{v7: Color y Grises con más Peso a los Grises}
 
@@ -368,11 +379,19 @@ Fijamos el peso en 0.5 antes de ver resultados, porque probar varios pesos y que
 
 La v7 quedó prácticamente empatada con la v6: 29 aciertos contra 30 en validación, con un F1 un poco mayor (0.283 contra 0.278) y mejor top-5 (0.600 contra 0.579), lo que sugiere que el color sí aporta como pista secundaria. Pero las diferencias son de una imagen, dentro del ruido, y con nuestra regla (elegir por accuracy en validación) gana la v6, que además es más simple porque no necesita las imágenes a color ni un peso que ajustar. En test la v7 salió mejor (0.295 contra 0.263), pero test no se usa para elegir, ya que hacerlo convertiría a test en una segunda validación y su resultado dejaría de ser una medida confiable.
 
-\subsection{v8: Modelo para la Interfaz Web}
+\subsection{v8: Fan Arts en Train (Modelo Final)}
 
-En clase vimos que, una vez que el modelo ya no tiene overfitting, se puede reentrenar con todo el dataset. Nuestro caso no cumple del todo esa condición, porque la v6 llega al 99\% en train, pero como vimos en las secciones anteriores, el overfitting viene sobre todo de que hay muy pocas imágenes por campeón, así que darle más imágenes es justo lo que más le puede ayudar. La v8 es exactamente la configuración de la v6 (mismo extractor, mismo clasificador, mismo learning rate y las 20 épocas de su mejor resultado), entrenada en grises con train + validación + test y sus volteos, lo que da 1,296 ejemplos contra 916 de la v6, unas 5 splash más por campeón.
+Con la v6 como base probamos la hipótesis de la falta de datos. La v8 es exactamente la misma v6 (mismo extractor, mismo clasificador y mismo entrenamiento), y lo único que cambia es que a train le agregamos las 380 fan arts y cosplays de la sección~\ref{sec:fanarts} con sus volteos, lo que da 1,676 ejemplos contra 916 de la v6.
 
-La v8 es la que usa la interfaz web, porque con más imágenes debería generalizar mejor. Pero no es el modelo final del reporte, porque como ya no queda ninguna imagen que no haya visto, no hay forma de medirla y sus resultados no se pueden comparar con los de las demás versiones. Las métricas que reportamos son las de la v6, que es el modelo que entrenamos solo con train, elegimos con validación y medimos en test.
+La v8 fue la mejor versión en validación, con accuracy de 0.389 (37 aciertos contra 30 de la v6), F1 macro de 0.374 (contra 0.278) y top-5 de 0.653 (contra 0.579). Esta mejora la conseguimos sin cambiar nada del modelo, solo dándole más imágenes, así que la hipótesis de que el límite eran los datos era cierta.
+
+En test casi no hubo cambio. La accuracy quedó igual (25 aciertos de 95), aunque no son las mismas imágenes, ya que la v8 acierta 6 que la v6 fallaba y falla otras 6 que la v6 acertaba. El F1 macro subió un poco (0.242 contra 0.230) y el top-5 bajó una imagen (0.516 contra 0.526). Parte de la diferencia con validación viene de que elegimos la mejor época con validación, y su accuracy brinca entre 0.33 y 0.39 de una época a otra, mientras que test no se usó para elegir nada. Aun así, con nuestra regla de selección la v8 es la mejor versión, así que es nuestro modelo final.
+
+\subsection{v9: Modelo para la Interfaz Web}
+
+En clase vimos que, una vez que el modelo ya no tiene overfitting, se puede reentrenar con todo el dataset. Nuestro caso no cumple del todo esa condición, porque la v8 llega al 99\% en train, pero como acabamos de ver con las fan arts, el overfitting viene sobre todo de que hay muy pocas imágenes por campeón, así que darle más imágenes es justo lo que más le puede ayudar. La v9 es exactamente la configuración de la v8 (mismo extractor, mismo clasificador, mismo learning rate y las 23 épocas de su mejor resultado), entrenada en grises con train, fan arts, validación y test y sus volteos, lo que da 2,056 ejemplos contra 1,676 de la v8, unas 5 splash más por campeón.
+
+La v9 es la que usa la interfaz web, porque con más imágenes debería generalizar mejor. Pero no es el modelo final del reporte, porque como ya no queda ninguna imagen que no haya visto, no hay forma de medirla y sus resultados no se pueden comparar con los de las demás versiones. Las métricas que reportamos son las de la v8, que es el modelo que entrenamos solo con train y fan arts, elegimos con validación y medimos en test.
 
 \section{Visualización y Resultados}
 
@@ -391,12 +410,13 @@ La Tabla~\ref{tab:resultados} resume todas las versiones y la Figura~\ref{fig:co
     v3 & EfficientNetB0 congelada + aumento                   & 0.586 & 0.189 & 0.165 & 0.137 & 0.400 & 0.109 \\
     v4 & v3 + fine-tuning desde block6a              & 0.604 & 0.200 & 0.168 & 0.137 & 0.389 & 0.096 \\
     v5 & 3 recortes de 384 px, EfficientNetB0 como extractor  & 0.991 & 0.242 & 0.207 & 0.242 & 0.505 & 0.227 \\
-    \textbf{v6} & \textbf{v5 entrenada y evaluada en grises (final)} & 0.991 & \textbf{0.316} & 0.278 & 0.263 & \textbf{0.526} & 0.230 \\
-    v7 & v5 color (peso 0.5) + grises, evaluada en grises     & 0.991 & 0.305 & \textbf{0.283} & \textbf{0.295} & 0.505 & \textbf{0.279} \\
-    v8 & v6 reentrenada con train + val + test (web)          & 0.987 & --    & --    & --    & --    & -- \\
+    v6 & v5 entrenada y evaluada en grises                   & 0.991 & 0.316 & 0.278 & 0.263 & \textbf{0.526} & 0.230 \\
+    v7 & v5 color (peso 0.5) + grises, evaluada en grises     & 0.991 & 0.305 & 0.283 & \textbf{0.295} & 0.505 & \textbf{0.279} \\
+    \textbf{v8} & \textbf{v6 + fan arts en train (final)}    & 0.995 & \textbf{0.389} & \textbf{0.374} & 0.263 & 0.516 & 0.242 \\
+    v9 & v8 reentrenada con train + val + test (web)          & 0.992 & --    & --    & --    & --    & -- \\
     \bottomrule
   \end{tabular}}
-  \caption{Resultados de todas las versiones. El azar con 38 clases es 0.026. La v8 se entrenó con todas las imágenes, así que no tiene métricas de validación ni de test.}
+  \caption{Resultados de todas las versiones. El azar con 38 clases es 0.026. La v9 se entrenó con todas las imágenes, así que no tiene métricas de validación ni de test.}
   \label{tab:resultados}
 \end{table*}
 
@@ -411,15 +431,15 @@ Viendo la tabla completa, hay tres cosas que destacan:
 
 \begin{itemize}
   \item \textbf{El tamaño con el que se ve al campeón importó más que la arquitectura.} Entre v3 y v4 (y en las iteraciones anteriores, cambiando de backbone) validación se movió poco y test nada, mientras que dividir la splash en tres recortes a mayor resolución (v5) fue el salto más grande.
-  \item \textbf{El color de las skins confunde al modelo.} Evaluar en grises mejora a un modelo entrenado a color, y entrenar solo en grises da la mejor versión en validación.
-  \item \textbf{El límite son los datos.} Todas las versiones con transfer learning a 384~px llegan a cerca del 99\% en train y se quedan en alrededor de 0.3 en validación. En la primera iteración, pasar de unas 9 a unas 12 imágenes por campeón (de 107 a 38 campeones) subió validación de 0.116 a 0.263 con el mismo modelo.
+  \item \textbf{El color de las skins confunde al modelo.} Evaluar en grises mejora a un modelo entrenado a color, y entrenar solo en grises subió validación de 0.242 a 0.316.
+  \item \textbf{El límite son los datos.} Todas las versiones con transfer learning a 384~px llegan a cerca del 99\% en train. En la primera iteración, pasar de unas 9 a unas 12 imágenes por campeón (de 107 a 38 campeones) subió validación de 0.116 a 0.263 con el mismo modelo, y al agregar las fan arts (v8) subió de 0.316 a 0.389, también sin cambiar el modelo, aunque en test la accuracy no se movió.
 \end{itemize}
 
 \subsection{Análisis del Modelo Final en Test}
 
-El modelo final (v6) acierta 25 de las 95 imágenes de test, y en el 52.6\% de los casos el campeón correcto está en su top 5. El desempeño por campeón es muy desigual: Annie y Blitzcrank llegan a un F1 de 0.80, mientras que 19 de los 38 campeones tienen F1 de 0 (entre ellos Ahri, Veigar, Sivir, Shaco, Riven, Nidalee, Master Yi y Karma). Hay que tomar esto con cuidado, porque cada campeón tiene solo 2 o 3 imágenes en test.
+El modelo final (v8) acierta 25 de las 95 imágenes de test, y en el 51.6\% de los casos el campeón correcto está en su top 5. El desempeño por campeón es muy desigual, Leona llega a un F1 de 0.80 y Shaco, Warwick, Blitzcrank, Soraka y Sona a 0.67, mientras que 19 de los 38 campeones tienen F1 de 0 (entre ellos Ahri, Veigar, Sivir, Riven, Master Yi, Katarina, Karma y Janna). Hay que tomar esto con cuidado, porque cada campeón tiene solo 2 o 3 imágenes en test.
 
-La matriz de confusión (Figura~\ref{fig:confusion}) muestra que los errores no se reparten al azar, ya que el modelo tiene campeones ``comodín'' a los que manda muchas imágenes que no reconoce, como Morgana y Master Yi (6 errores cada uno), Vayne (5), Sona y Miss Fortune (3 cada uno). Son campeones humanoides, una silueta que se parece a la de muchos otros. Master Yi es un caso claro, recibe 6 predicciones equivocadas y no acierta ninguna de sus propias imágenes.
+La matriz de confusión (Figura~\ref{fig:confusion}) muestra que los errores no se reparten al azar, ya que el modelo tiene campeones ``comodín'' a los que manda muchas imágenes que no reconoce, como Irelia (7 errores), Miss Fortune, Sivir y Vayne (5 cada uno) y Master Yi (4). Son campeones humanoides, una silueta que se parece a la de muchos otros. Master Yi es un caso claro, recibe 4 predicciones equivocadas y no acierta ninguna de sus propias imágenes.
 
 \begin{figure}[h]
   \centering
@@ -428,21 +448,28 @@ La matriz de confusión (Figura~\ref{fig:confusion}) muestra que los errores no 
   \label{fig:confusion}
 \end{figure}
 
-La Figura~\ref{fig:ejemplos} muestra predicciones sobre imágenes de test. El modelo acierta con más seguridad a campeones de silueta única, como Kog'Maw (75\%), y falla con humanoides parecidos entre sí, por ejemplo confunde a Vayne con Morgana, a Caitlyn con Sivir y a Kai'Sa con Lux. Algunos errores son con bastante seguridad, como Yasuo confundido con Sona (68\%). También se ve un caso de splash con varios personajes (Annie con un personaje grande al lado), donde el modelo responde por otro campeón.
+La Figura~\ref{fig:ejemplos} muestra predicciones sobre imágenes de test. El modelo acierta con más seguridad a campeones de silueta única, como Kog'Maw (87\%), y falla con humanoides parecidos entre sí, por ejemplo confunde a Morgana con Irelia, a Vayne con Diana y a Caitlyn con Sivir. Algunos errores son con bastante seguridad, como Yasuo confundido con Sona (76\%) o Veigar con Kog'Maw (55\%), dos campeones pequeños. También se ve un caso de splash con varios personajes (Annie con un personaje grande al lado), donde el modelo responde por otro campeón.
+
+\begin{figure*}[t]
+  \centering
+  \includegraphics[width=0.85\textwidth]{ejemplos_test.png}
+  \caption{Predicciones del modelo final (v8) sobre imágenes de test, ya convertidas a escala de grises. En verde los aciertos y en rojo los errores, con la probabilidad que el modelo le dio a su predicción.}
+  \label{fig:ejemplos}
+\end{figure*}
 
 \section{Interfaz Web}
 
-Para mostrar cómo funciona el modelo armamos una interfaz web sencilla, que usa la v8 (la configuración del modelo final reentrenada con todas las imágenes). El modelo se guarda en formato .keras junto con un archivo metadata.json que tiene la lista de campeones, el tamaño de entrada y si el modelo espera la imagen en escala de grises. Un servidor en Python (src/app.py) carga el modelo una sola vez, recibe las imágenes que sube el usuario, les aplica el mismo preprocesamiento del entrenamiento y regresa el top 5 de campeones con su probabilidad.
+Para mostrar cómo funciona el modelo armamos una interfaz web sencilla, que usa la v9 (la configuración del modelo final reentrenada con todas las imágenes, incluidas las fan arts). El modelo se guarda en formato .keras junto con un archivo metadata.json que tiene la lista de campeones, el tamaño de entrada y si el modelo espera la imagen en escala de grises. Un servidor en Python (src/app.py) carga el modelo una sola vez, recibe las imágenes que sube el usuario, les aplica el mismo preprocesamiento del entrenamiento y regresa el top 5 de campeones con su probabilidad.
 
-Como el modelo se entrenó con splash horizontales, las imágenes con una proporción muy distinta (verticales o cuadradas) no se pueden estirar a $651\times384$ sin deformarlas mucho. Si la proporción se aleja más de 15\% de la de una splash, la imagen se coloca completa con bordes negros. Las imágenes que usamos para probar la interfaz son externas al dataset y no son parte de la evaluación del modelo, que es la de la v6 en test.
+Como el modelo se entrenó con splash horizontales, las imágenes con una proporción muy distinta (verticales o cuadradas) no se pueden estirar a $651\times384$ sin deformarlas mucho. Si la proporción se aleja más de 15\% de la de una splash, la imagen se coloca completa con bordes negros. Las imágenes que usamos para probar la interfaz son externas al dataset y no son parte de la evaluación del modelo, que es la de la v8 en test.
 
 \section{Conclusiones}
 
-Construimos un clasificador que reconoce a 38 campeones de League of Legends a partir de sus splash arts con 0.263 de accuracy, 0.526 de top-5 y 0.230 de F1 macro en test, 10 veces más que el azar. Es un resultado moderado, pero tiene sentido si se considera que hay solo 12 skins por campeón en train y que no comparten colores, ropa ni fondo.
+Construimos un clasificador que reconoce a 38 campeones de League of Legends a partir de sus splash arts con 0.263 de accuracy, 0.516 de top-5 y 0.242 de F1 macro en test, 10 veces más que el azar. Es un resultado moderado, pero tiene sentido si se considera que hay solo 12 skins y 10 fan arts por campeón en train, y que no comparten colores, ropa ni fondo.
 
-Las mejoras más grandes salieron de revisar por qué fallaba el modelo y no de cambiar de arquitectura. Así fue como decidimos limpiar las splash grupales que eran imposibles de aprender, reducir los campeones cuando vimos que todas las redes llegaban al mismo techo, mostrarle al campeón a mayor resolución cuando vimos que el tamaño con el que lo ve importaba, y quitar el color cuando vimos que le estorbaba.
+Las mejoras más grandes salieron de revisar por qué fallaba el modelo y no de cambiar de arquitectura. Así fue como decidimos limpiar las splash grupales que eran imposibles de aprender, reducir los campeones cuando vimos que todas las redes llegaban al mismo techo, mostrarle al campeón a mayor resolución cuando vimos que el tamaño con el que lo ve importaba, quitar el color cuando vimos que le estorbaba y agregar fan arts y cosplays cuando vimos que todas las versiones memorizaban train.
 
-El principal límite que queda es que todas las versiones memorizan train, y el modelo mejoró cuando tuvo más imágenes por campeón. La mejora con más impacto sería conseguir más splash arts por campeón (por ejemplo, de otras fuentes oficiales del juego), lo que además permitiría volver a incluir a los campeones que quitamos.
+Nuestra hipótesis era que el límite del modelo estaba en la falta de datos, y con las fan arts pudimos ver que era cierta, ya que con más imágenes por campeón el mismo modelo subió en validación de 0.316 a 0.389 y el F1 macro de 0.278 a 0.374. En test la accuracy quedó igual y el F1 subió un poco, pero con solo 95 imágenes una diferencia de pocas imágenes está dentro del ruido. Lo que más podría seguir ayudando es conseguir todavía más imágenes por campeón, lo que además permitiría volver a incluir a los campeones que quitamos.
 
 \begin{thebibliography}{9}
 \small
